@@ -21,6 +21,7 @@ jobs:
           pip install -r requirements.txt
       - name: Raporu Oluştur ve E-postayı Gönder
         env:
+          APP_URL: 'https://segkolik.streamlit.app'
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
           EMAIL_TO: ${{ secrets.EMAIL_TO }}
           SMTP_HOST: ${{ secrets.SMTP_HOST }}
