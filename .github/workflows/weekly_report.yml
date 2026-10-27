@@ -1,25 +1,57 @@
 name: Salı Günü Haftalık Spor Raporu
+
 on:
   schedule:
-    # Her Salı sabahı Türkiye saatiyle 10:00 (TSİ = UTC+3 olduğundan UTC 07:00)
+    # Ana zaman: Her Salı Türkiye saatiyle 10:00 (TSİ = UTC+3 → UTC 07:00)
+    # Format: Dakika Saat Gün Ay HaftanınGünü (0=Pazar, 1=Pazartesi, 2=Salı...)
     - cron: '0 7 * * 2'
-  workflow_dispatch:
+    # YEDEK DİLİMLER: GitHub Actions cron'u yoğunlukta tetikleri geciktirebilir
+    # veya tamamen atlayabilir (bilinen kısıt). Bu yüzden aynı gün TR 12:00 ve
+    # TR 14:00 için yedek dilimler var; "Mükerrer gönderim kontrolü" adımı sayesinde
+    # mailler yalnızca 1 kez gönderilir.
+    - cron: '0 9 * * 2'
+    - cron: '0 11 * * 2'
+  workflow_dispatch: # GitHub arayüzünden istenildiği an test amaçlı tetiklenebilmesi için
+
+permissions:
+  contents: read
+  actions: read # Mükerrer kontrol için son iş akışı çalıştırmalarını okuma izni
+
 jobs:
   send-weekly-sports-report:
     runs-on: ubuntu-latest
+
     steps:
       - name: Depoyu İndir (Checkout)
         uses: actions/checkout@v4
+
       - name: Python Ortamını Kur
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
+
       - name: Gerekli Paketleri Yükle
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
+
+      # Son 5 saatte bu iş akışına ait başarılı veya halen yürüyen bir schedule
+      # çalışması varsa gönderimi atlar → yedek dilimler mükerrer mail oluşturmaz.
+      # (Dilimler arası boşluk en fazla 4 saat olduğundan 5 saatlik pencere yeterli.)
+      - name: Mükerrer gönderim kontrolü
+        id: dedup
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SINCE=$(date -u -d '5 hours ago' +'%Y-%m-%dT%H:%M:%SZ')
+          COUNT=$(gh api "repos/${{ github.repository }}/actions/workflows/weekly_report.yml/runs?per_page=10" \
+            --jq "[.workflow_runs[] | select(.id != ${{ github.run_id }}) | select(.event == \"schedule\") | select(.created_at > \"$SINCE\") | select(.conclusion == \"success\" or .status == \"in_progress\" or .status == \"queued\")] | length")
+          echo "count=$COUNT"
+          echo "count=$COUNT" >> "$GITHUB_OUTPUT"
+
       - name: Raporu Oluştur ve E-postayı Gönder
+        if: steps.dedup.outputs.count == '0'
         env:
           APP_URL: 'https://segkolik.streamlit.app'
           EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
